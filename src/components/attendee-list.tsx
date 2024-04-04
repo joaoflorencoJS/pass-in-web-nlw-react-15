@@ -11,8 +11,7 @@ import { Table } from './table/table';
 import { TableHeader } from './table/table-header';
 import { TableData } from './table/table-data';
 import { TableRow } from './table/table-row';
-import { ChangeEvent, useState } from 'react';
-import { attendees } from '../data/attendees';
+import { ChangeEvent, useEffect, useState } from 'react';
 import 'dayjs/locale/pt-br';
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
@@ -20,29 +19,94 @@ import relativeTime from 'dayjs/plugin/relativeTime';
 dayjs.extend(relativeTime);
 dayjs.locale('pt-br');
 
-export function AttendeeList() {
-  const [search, setSearch] = useState('');
-  const [page, setPage] = useState(1);
+interface Attendee {
+  id: string;
+  name: string;
+  email: string;
+  createdAt: string;
+  checkedInAt: string | null;
+}
 
-  const totalPages = Math.ceil(attendees.length / 10);
+export function AttendeeList() {
+  const [search, setSearch] = useState(() => {
+    const url = new URL(window.location.toString());
+    return url.searchParams.get('search') ?? '';
+  });
+  const [attendees, setAttendees] = useState<Attendee[]>([]);
+  const [total, setTotal] = useState(0);
+
+  const totalPages = Math.ceil(total / 10);
+
+  const [page, setPage] = useState(() => {
+    const url = new URL(window.location.toString());
+    const hasPage = url.searchParams.has('page');
+
+    if (hasPage && Number(url.searchParams.get('page')) <= totalPages)
+      return Number(url.searchParams.get('page'));
+
+    if (hasPage) {
+      url.searchParams.set('page', '1');
+      window.history.pushState({}, '', url);
+    }
+
+    return 1;
+  });
+
+  useEffect(() => {
+    const url = new URL(
+      'http://localhost:3333/events/9e9bd979-9d10-4915-b339-3786b1634f33/attendees'
+    );
+
+    url.searchParams.set('pageIndex', String(page - 1));
+
+    if (search.length > 0) url.searchParams.set('query', search);
+
+    fetch(url)
+      .then((res) => res.json())
+      .then((data) => {
+        setAttendees(data.attendees);
+        setTotal(data.total);
+      });
+  }, [page, search]);
+
+  function setCurrentSearch(search: string) {
+    const url = new URL(window.location.toString());
+
+    url.searchParams.set('search', search);
+
+    window.history.pushState({}, '', url);
+
+    setSearch(search);
+  }
+
+  function setCurrentPage(page: number) {
+    const url = new URL(window.location.toString());
+
+    url.searchParams.set('page', String(page));
+
+    window.history.pushState({}, '', url);
+
+    setPage(page);
+  }
 
   const goToNextPage = () => {
-    setPage(page + 1);
+    setCurrentPage(page + 1);
   };
   const goToPreviousPage = () => {
-    setPage(page - 1);
+    setCurrentPage(page - 1);
   };
 
   const goToLastPage = () => {
-    setPage(totalPages);
+    setCurrentPage(totalPages);
   };
 
   const goToFirstPage = () => {
-    setPage(1);
+    setCurrentPage(1);
   };
 
   const onSearchInputChanged = (event: ChangeEvent<HTMLInputElement>) => {
-    setSearch(event.target.value);
+    setCurrentSearch(event.target.value);
+    setCurrentPage(1);
   };
 
   return (
@@ -53,12 +117,11 @@ export function AttendeeList() {
           <Search className="size-4 text-emerald-300" />
           <input
             onChange={onSearchInputChanged}
+            value={search}
             type="search"
             placeholder="Buscar participante..."
-            className="bg-transparent flex-1 outline-none border-0 p-0 text-sm"
+            className="bg-transparent flex-1 outline-none border-0 p-0 text-sm focus:ring-0"
           />
-
-          {search}
         </div>
       </div>
 
@@ -79,7 +142,7 @@ export function AttendeeList() {
           </tr>
         </thead>
         <tbody>
-          {attendees.slice((page - 1) * 10, page * 10).map((attendee) => {
+          {attendees.map((attendee) => {
             return (
               <TableRow key={attendee.id}>
                 <TableData>
@@ -96,7 +159,13 @@ export function AttendeeList() {
                   </div>
                 </TableData>
                 <TableData>{dayjs().to(attendee.createdAt)}</TableData>
-                <TableData>{dayjs().to(attendee.checkedInAt)}</TableData>
+                <TableData>
+                  {attendee.checkedInAt === null ? (
+                    <span className="text-zinc-400">Não fez check-in</span>
+                  ) : (
+                    dayjs().to(attendee.checkedInAt)
+                  )}
+                </TableData>
                 <TableData>
                   <IconButton transparent>
                     <MoreHorizontal className="size-4" />
@@ -109,8 +178,7 @@ export function AttendeeList() {
         <tfoot>
           <tr>
             <TableData colSpan={3}>
-              Mostrando {page * 10 > attendees.length ? attendees.length : page * 10} de{' '}
-              {attendees.length} itens
+              Mostrando {page * 10 > total ? total : page * 10} de {total} itens
             </TableData>
             <TableData className="text-right" colSpan={3}>
               <div className="inline-flex items-center gap-8">
